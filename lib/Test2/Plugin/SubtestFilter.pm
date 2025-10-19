@@ -2,6 +2,7 @@ package Test2::Plugin::SubtestFilter;
 use 5.016;
 use strict;
 use warnings;
+use Encode qw(decode_utf8);
 
 our $VERSION = "0.01";
 
@@ -16,7 +17,11 @@ sub import {
 
     # Get filter pattern from environment variable
     my $subtest_filter = $ENV{SUBTEST_FILTER} // '.*';
-    my $method_regexp = eval { qr/\A$subtest_filter\z/ };
+    # Decode UTF-8 if necessary
+    if ($subtest_filter =~ /[\x80-\xFF]/) {
+        $subtest_filter = decode_utf8($subtest_filter);
+    }
+    my $method_regexp = eval { qr/\A$subtest_filter\z/u };
     die "SUBTEST_FILTER ($subtest_filter) is not a valid regexp: $@" if $@;
 
     # Override subtest in caller's namespace
@@ -24,12 +29,11 @@ sub import {
     no warnings 'redefine';
 
     # Save original subtest function
-    my $orig = \&{"${caller}::subtest"};
+    my $orig = $caller->can('subtest');
 
     # Check if subtest exists in caller's namespace
-    unless (defined $orig && defined &$orig) {
-        require Carp;
-        Carp::croak("subtest is not defined in ${caller}. Please load Test2::V0 or Test2::Tools::Subtest before loading Test2::Plugin::SubtestFilter.");
+    unless (defined $orig) {
+        # do nothing
     }
 
     *{"${caller}::subtest"} = sub {
