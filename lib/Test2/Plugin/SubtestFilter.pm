@@ -6,23 +6,20 @@ use Encode qw(decode_utf8);
 
 our $VERSION = "0.01";
 
-# Track state with package variables
-our $parent_matched = 0;
-our $checking_children = 0;
-our $child_matched_in_check = 0;
+# Track test path for nested subtests
+our @test_path = ();
+our $subtest_filter = '';
 
 sub import {
     my $class = shift;
     my $caller = caller;
 
     # Get filter pattern from environment variable
-    my $subtest_filter = $ENV{SUBTEST_FILTER} // '.*';
+    $subtest_filter = $ENV{SUBTEST_FILTER} // '';
     # Decode UTF-8 if necessary
     if ($subtest_filter =~ /[\x80-\xFF]/) {
         $subtest_filter = decode_utf8($subtest_filter);
     }
-    my $method_regexp = eval { qr/\A$subtest_filter\z/u };
-    die "SUBTEST_FILTER ($subtest_filter) is not a valid regexp: $@" if $@;
 
     # Override subtest in caller's namespace
     no strict 'refs';
@@ -39,46 +36,63 @@ sub import {
     *{"${caller}::subtest"} = sub {
         my ($name, $code, @rest) = @_;
 
-        # If we're in checking mode and name matches, record it
-        if ($checking_children && $name =~ $method_regexp) {
-            $child_matched_in_check = 1;
-            return 1;  # Don't actually run during check
-        }
+        # Build the full test path with current name
+        my @current_path = (@test_path, $name);
+        my $full_path = join(' ', @current_path);
 
-        # If parent matched, run all children without filtering
-        if ($parent_matched) {
+        # If no filter is set, run all tests
+        if (!$subtest_filter) {
+            local @test_path = @current_path;
             return $orig->($name, $code, @rest);
         }
 
-        # Check if current subtest name matches the filter
-        if ($name =~ $method_regexp) {
-            local $parent_matched = 1;  # All children should run
+        # Check if the full path contains the filter string (exact substring match)
+        my $matches = index($full_path, $subtest_filter) >= 0;
+
+        if ($matches) {
+            # This test matches, run it and all its children
+            local @test_path = @current_path;
             return $orig->($name, $code, @rest);
         }
 
-        # Name doesn't match - check if any children would match
-        my $has_matching_child;
-        {
-            local $checking_children = 1;
-            local $child_matched_in_check = 0;
-
-            # Dry-run to see if any children match (intercept events)
-            require Test2::API;
-            Test2::API::intercept(sub {
-                eval { $code->() };
-            });
-
-            $has_matching_child = $child_matched_in_check;
+        # Test doesn't match directly - check if we should explore this path
+        # We should run if the filter could potentially match a descendant path
+        
+        # Simple heuristic: run if the filter starts with our current path
+        # or if our current path is part of the filter
+        my $current_path_str = join(' ', @current_path);
+        
+        # Check if filter begins with current path (e.g., current: "foo", filter: "foo nested arithmetic")
+        my $filter_starts_with_current = (index($subtest_filter, $current_path_str) == 0);
+        
+        # Check if current path could be part of filter (e.g., current: "foo", filter: "nested very deep")
+        # by seeing if there are words in the filter that we haven't seen yet
+        my @filter_parts = split /\s+/, $subtest_filter;
+        my @current_parts = split /\s+/, $current_path_str;
+        
+        my $could_be_ancestor = 0;
+        for my $filter_part (@filter_parts) {
+            # If this part of the filter isn't in our current path,
+            # we might find it in descendants
+            my $found_in_current = 0;
+            for my $current_part (@current_parts) {
+                if ($current_part eq $filter_part) {
+                    $found_in_current = 1;
+                    last;
+                }
+            }
+            if (!$found_in_current) {
+                $could_be_ancestor = 1;
+                last;
+            }
         }
-
-        if ($has_matching_child) {
-            # At least one child matched, run the parent for real
-            # checking_children is now 0 (exited local scope)
-            # Children will be filtered by the normal matching logic
+        
+        if ($filter_starts_with_current || $could_be_ancestor) {
+            local @test_path = @current_path;
             return $orig->($name, $code, @rest);
         }
-
-        # No children matched - skip this subtest
+        
+        # No potential match - skip this subtest
         require Test2::API;
         my $ctx = Test2::API::context();
         $ctx->skip($name);
@@ -86,6 +100,7 @@ sub import {
         return 1;
     };
 }
+
 
 1;
 __END__
