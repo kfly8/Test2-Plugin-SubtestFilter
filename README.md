@@ -1,30 +1,32 @@
-
+[![Actions Status](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions?workflow=test)
 # NAME
 
 Test2::Plugin::SubtestFilter - Filter subtests by name using environment variables
 
 # SYNOPSIS
 
-    use Test2::V0;
-    use Test2::Plugin::SubtestFilter;
+```perl
+use Test2::V0;
+use Test2::Plugin::SubtestFilter;
 
-    subtest 'foo' => sub {
-        ok 1, 'foo test 1';
+subtest 'foo' => sub {
+    ok 1, 'foo test 1';
 
-        subtest 'nested arithmetic' => sub {
-            ok 1, 'arithmetic test';
-        };
-
-        subtest 'nested string' => sub {
-            ok 1, 'string test';
-        };
+    subtest 'nested arithmetic' => sub {
+        ok 1, 'arithmetic test';
     };
 
-    subtest 'bar' => sub {
-        ok 1, 'bar test';
+    subtest 'nested string' => sub {
+        ok 1, 'string test';
     };
+};
 
-    done_testing;
+subtest 'bar' => sub {
+    ok 1, 'bar test';
+};
+
+done_testing;
+```
 
 # DESCRIPTION
 
@@ -36,22 +38,26 @@ run only a subset of your tests during development or debugging.
 
 Load this plugin after loading Test2::V0 or Test2::Tools::Subtest:
 
-    use Test2::V0;
-    use Test2::Plugin::SubtestFilter;
+```perl
+use Test2::V0;
+use Test2::Plugin::SubtestFilter;
+```
 
 Then set the `SUBTEST_FILTER` environment variable to filter subtests:
 
-    # Run only the 'foo' subtest and all its children
-    SUBTEST_FILTER=foo prove -lv t/test.t
+```perl
+# Run only the 'foo' subtest and all its children
+SUBTEST_FILTER=foo prove -lv t/test.t
 
-    # Run only the 'nested arithmetic' subtest (and its parent 'foo')
-    SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
+# Run only the 'nested arithmetic' subtest (and its parent 'foo')
+SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
 
-    # Use regex patterns to match multiple subtests
-    SUBTEST_FILTER='ba.*' prove -lv t/test.t  # Matches 'bar', 'baz', etc.
+# Use regex patterns to match multiple subtests
+SUBTEST_FILTER='ba.*' prove -lv t/test.t  # Matches 'bar', 'baz', etc.
 
-    # Run all tests (no filtering)
-    prove -lv t/test.t
+# Run all tests (no filtering)
+prove -lv t/test.t
+```
 
 # FILTERING BEHAVIOR
 
@@ -62,17 +68,21 @@ The plugin implements smart filtering with the following rules:
     When a parent subtest name matches the filter, the parent and ALL its children
     are executed without further filtering.
 
-        SUBTEST_FILTER=foo prove -lv t/test.t
-        # Executes 'foo' and all its nested subtests
+    ```perl
+    SUBTEST_FILTER=foo prove -lv t/test.t
+    # Executes 'foo' and all its nested subtests
+    ```
 
 - **Child name matches**
 
     When a child subtest name matches the filter, the parent is executed but only
     the matching children are run. Non-matching siblings are skipped.
 
-        SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
-        # Executes 'foo' (parent) but only runs 'nested arithmetic' (child)
-        # Other children like 'nested string' are skipped
+    ```
+    SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
+    # Executes 'foo' (parent) but only runs 'nested arithmetic' (child)
+    # Other children like 'nested string' are skipped
+    ```
 
 - **No match**
 
@@ -91,8 +101,10 @@ The plugin implements smart filtering with the following rules:
 The pattern is automatically anchored with `\A` and `\z`, so partial matches
 won't work unless you use regex wildcards:
 
-    SUBTEST_FILTER=foo        # Matches only 'foo' exactly
-    SUBTEST_FILTER='foo.*'    # Matches 'foo', 'foobar', 'foo_test', etc.
+```
+SUBTEST_FILTER=foo        # Matches only 'foo' exactly
+SUBTEST_FILTER='foo.*'    # Matches 'foo', 'foobar', 'foo_test', etc.
+```
 
 # IMPLEMENTATION DETAILS
 
