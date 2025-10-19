@@ -1,5 +1,5 @@
 {
-   "abstract" : "It's new $module",
+   "abstract" : "Filter subtests by name using environment variables",
    "author" : [
       "kobaken <kentafly88@gmail.com>"
    ],
@@ -42,11 +42,13 @@
       },
       "runtime" : {
          "requires" : {
-            "perl" : "5.008001"
+            "Test2::Suite" : "0",
+            "perl" : "5.016"
          }
       },
       "test" : {
          "requires" : {
+            "Test2::V0" : "0",
             "Test::More" : "0.98"
          }
       }
