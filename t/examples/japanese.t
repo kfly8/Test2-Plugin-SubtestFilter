@@ -1,7 +1,5 @@
-use strict;
-use warnings;
-use utf8;
 use Test2::V0;
+use Test2::Plugin::UTF8;
 use Test2::Plugin::SubtestFilter;
 
 subtest 'ユーザー認証' => sub {
@@ -32,10 +30,10 @@ subtest 'データベース操作' => sub {
 
 subtest '文字列処理' => sub {
     ok 1, '日本語変換';
-    
+
     subtest '正規表現マッチング' => sub {
         ok 1, 'パターン検証';
-        
+
         subtest '漢字かな混じり' => sub {
             ok 1, '文字列解析';
         };

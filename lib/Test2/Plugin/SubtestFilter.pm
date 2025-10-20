@@ -3,180 +3,101 @@ use 5.016;
 use strict;
 use warnings;
 use Encode qw(decode_utf8);
+use Test2::API qw(context);
+use B::Deparse ();
+use List::Util qw(any);
 
 our $VERSION = "0.01";
+
+our $SEPARATOR = ' ';
 
 sub import {
     my $class = shift;
     my $caller = caller;
 
-    # Get filter pattern from environment variable
-    my $subtest_filter = $ENV{SUBTEST_FILTER} // '';
+    # Get original subtest function from caller's namespace
+    # If it doesn't exist, do nothing
+    my $orig = $caller->can('subtest') or return;
+
+    # Override subtest in caller's namespace
+    no strict 'refs';
+    no warnings 'redefine';
+    *{"${caller}::subtest"} = _create_filtered_subtest($orig, $caller);
+}
+
+# Get subtest filter regex from environment variable
+sub _get_subtest_filter_regex {
+
+    unless ( $ENV{SUBTEST_FILTER} ) {
+        return undef;
+    }
+
+    my $subtest_filter = $ENV{SUBTEST_FILTER};
+
     # Decode UTF-8 if necessary
     if ($subtest_filter =~ /[\x80-\xFF]/) {
         $subtest_filter = decode_utf8($subtest_filter);
     }
 
-    apply_plugin($caller, $subtest_filter);
+    my $regexp = eval { qr/$subtest_filter/ };
+    die "SUBTEST_FILTER ($regexp) is not a valid regexp: $@" if $@;
+
+    return $regexp;
 }
 
-sub apply_plugin {
-    my ($caller, $subtest_filter) = @_;
-    
-    # Override subtest in caller's namespace
-    no strict 'refs';
-    no warnings 'redefine';
-
-    # Save original subtest function
-    my $orig = $caller->can('subtest');
-
-    # Check if subtest exists in caller's namespace
-    unless (defined $orig) {
-        # do nothing
-    }
-
-    *{"${caller}::subtest"} = _create_filtered_subtest($orig, $subtest_filter, [], $caller);
-}
-
+# Create a filtered subtest wrapper
 sub _create_filtered_subtest {
-    my ($orig, $filter, $current_path, $target_caller) = @_;
-    
+    my ($original_subtest, $target_caller) = @_;
+
+    my $deparse = B::Deparse->new('-p', '-sC');
+
     return sub {
-        my ($name, $code, @rest) = @_;
+        my $filter = _get_subtest_filter_regex();
 
-        # Build the full test path with current name
-        my @new_path = (@$current_path, $name);
-        my $full_path = join(' ', @new_path);
-
-        # If no filter is set, run all tests
-        if (!$filter) {
-            return $orig->($name, _wrap_code_with_path($code, $filter, \@new_path, $target_caller), @rest);
+        # If no filter is set, run the original subtest
+        unless ($filter) {
+            goto &$original_subtest;
         }
 
-        # Check if the full path contains the filter string (exact substring match)
-        my $matches = index($full_path, $filter) >= 0;
+        my $name = shift;
+        my $params = ref($_[0]) eq 'HASH' ? shift(@_) : {};
+        my $code = shift;
+        my @args = @_;
 
-        if ($matches) {
-            # This test matches, run it and all its children without further filtering
-            # Create a wrapper that uses unfiltered subtest for children
-            return $orig->($name, _wrap_code_with_unfiltered_subtest($code, $orig, $target_caller), @rest);
+        my $ctx = context();
+        my $hub = $ctx->hub;
+
+        $hub->set_meta(subtest_name => $name);
+        my @stacked_subtest_names = map { $_->get_meta('subtest_name') } $ctx->stack->all;
+        my $current_subtest_fullname = join $SEPARATOR, @stacked_subtest_names;
+
+        # If a parent subtest matches, run all children
+        if ($current_subtest_fullname =~ $filter) {
+            my $pass = $original_subtest->($name, $params, $code, @args);
+            $ctx->release;
+            return $pass;
         }
 
-        # Check if this path could potentially lead to a match
-        if (_could_lead_to_match($filter, \@new_path)) {
-            # Continue exploring this path with filtering
-            return $orig->($name, _wrap_code_with_path($code, $filter, \@new_path, $target_caller), @rest);
+        # Dry-run the subtest to check for matching child subtests
+        my $obj    = B::svref_2object(\$code);
+        my $source = $deparse->coderef2text($code);
+        my @child_subtest_names = $source =~ /subtest\(['"](.+?)['"]/g;
+
+        if (@child_subtest_names) {
+            my @child_subtest_fullnames = map { join $SEPARATOR, $current_subtest_fullname, $_ } @child_subtest_names;
+            if (any { $_ =~ $filter } @child_subtest_fullnames) {
+                my $pass = $original_subtest->($name, $params, $code, @args);
+                $ctx->release;
+                return $pass;
+            }
         }
 
-        # No potential match - skip this subtest
-        require Test2::API;
-        my $ctx = Test2::API::context();
+        # No match found, skip the subtest
         $ctx->skip($name);
         $ctx->release;
         return 1;
-    };
-}
-
-sub _wrap_code_with_path {
-    my ($original_code, $filter, $current_path, $target_caller) = @_;
-    
-    return sub {
-        # Temporarily replace the subtest function in the current scope
-        # to continue filtering at the next level
-        my $caller = caller;
-        
-        # Save current subtest function
-        no strict 'refs';
-        my $current_subtest = *{"${caller}::subtest"}{CODE};
-        
-        # Replace with filtered version for this scope
-        local *{"${caller}::subtest"} = _create_filtered_subtest(
-            $current_subtest, 
-            $filter, 
-            $current_path,
-            $target_caller
-        );
-        
-        # Run the original code
-        return $original_code->();
-    };
-}
-
-sub _wrap_code_without_filtering {
-    my ($original_code) = @_;
-    
-    return sub {
-        # Run the original code without any filtering modifications
-        # This ensures that matched subtests run all their children
-        return $original_code->();
-    };
-}
-
-sub _wrap_code_with_unfiltered_subtest {
-    my ($original_code, $orig_subtest, $target_caller) = @_;
-    
-    return sub {
-        # Use the target caller namespace instead of runtime caller
-        my $caller = $target_caller;
-        
-        # Save current (filtered) subtest function  
-        no strict 'refs';
-        my $current_subtest = *{"${caller}::subtest"}{CODE};
-        
-        # Create unfiltered subtest that just passes through to original
-        my $unfiltered_subtest = sub {
-            my ($name, $code, @rest) = @_;
-            return $orig_subtest->($name, $code, @rest);
-        };
-        
-        # Temporarily replace subtest with unfiltered version
-        local *{"${caller}::subtest"} = $unfiltered_subtest;
-        
-        # Run the original code
-        return $original_code->();
-    };
-}
-
-sub _could_lead_to_match {
-    my ($filter, $current_path) = @_;
-    
-    my $current_path_str = join(' ', @$current_path);
-    
-    # If filter starts with current path, definitely continue
-    # e.g., path="foo", filter="foo nested arithmetic"
-    if (index($filter, $current_path_str) == 0) {
-        return 1;
     }
-    
-    # Check if current path could be start of filter path
-    my @filter_words = split /\s+/, $filter;
-    my @path_words = @$current_path;
-    
-    if (@path_words <= @filter_words) {
-        my $matches_prefix = 1;
-        for my $i (0 .. $#path_words) {
-            if ($path_words[$i] ne $filter_words[$i]) {
-                $matches_prefix = 0;
-                last;
-            }
-        }
-        return 1 if $matches_prefix;
-    }
-    
-    # Special case: if filter doesn't start with current path but could contain it
-    # Example: filter="nested arithmetic", path=["foo"] -> check if "foo nested arithmetic" could exist
-    my $potential_full_path = $current_path_str . ' ' . $filter;
-    # But we can't know if this exists without exploring, so we need a different approach
-    
-    # Only explore if the filter could reasonably appear in descendants
-    # For single words, be conservative and only allow exploration at top level
-    if (@$current_path == 1 && scalar(split /\s+/, $filter) > 1) {
-        return 1;  # Allow exploring top-level subtests for multi-word filters
-    }
-    
-    return 0;
 }
-
 
 1;
 __END__
