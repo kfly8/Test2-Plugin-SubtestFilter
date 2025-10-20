@@ -49,7 +49,7 @@ sub _get_subtest_filter_regex {
 sub _create_filtered_subtest {
     my ($original_subtest, $target_caller) = @_;
 
-    my $deparse = B::Deparse->new('-p', '-sC');
+    my $deparse = B::Deparse->new('-p');
 
     return sub {
         my $filter = _get_subtest_filter_regex();
