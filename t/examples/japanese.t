@@ -34,7 +34,7 @@ subtest '文字列処理' => sub {
     subtest '正規表現マッチング' => sub {
         ok 1, 'パターン検証';
 
-        subtest '漢字かな混じり' => sub {
+        subtest '漢字かな' => sub {
             ok 1, '文字列解析';
         };
     };

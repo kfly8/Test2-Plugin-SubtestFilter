@@ -1,176 +1,160 @@
 use Test2::V0;
-use Capture::Tiny qw(capture);
-use File::Spec ();
 
-my $test_file = File::Spec->catfile('t', 'examples', 'basic.t');
+use lib 't/lib';
+use TestHelper;
 
-subtest 'no SUBTEST_FILTER - all tests run' => sub {
-    local $ENV{SUBTEST_FILTER};
-    delete $ENV{SUBTEST_FILTER};
+my $test_file = 't/examples/basic.t';
 
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
+my @tests = (
+    {
+        name => 'no SUBTEST_FILTER - all tests run',
+        filter => undef,
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'executed',
+            'baz'                       => 'executed',
+            'baz > nested deep'         => 'executed',
+            'baz > nested deep > nested very deep' => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=foo - matches foo only',
+        filter => 'foo',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=bar - matches bar only',
+        filter => 'bar',
+        expect => {
+            'foo'                       => 'skipped',
+            'bar'                       => 'executed',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with substring pattern ba - matches bar and baz',
+        filter => 'ba',
+        expect => {
+            'foo'                       => 'skipped',
+            'bar'                       => 'executed',
+            'baz'                       => 'executed',
+            'baz > nested deep'         => 'executed',
+            'baz > nested deep > nested very deep' => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER for nested child with space-separated path',
+        filter => 'foo nested arithmetic',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'skipped',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER for deeply nested child with partial substring',
+        filter => 'nested very deep',
+        expect => {
+            'foo'                       => 'skipped',
+            'bar'                       => 'skipped',
+            'baz'                       => 'executed',
+            'baz > nested deep'         => 'executed',
+            'baz > nested deep > nested very deep' => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER="nested arithmetic" - explores top level for multi-word',
+        filter => 'nested arithmetic',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'skipped',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with no match - skips all tests',
+        filter => 'nonexistent',
+        expect => {
+            'foo'                       => 'skipped',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with partial nested path match - skips all (single word)',
+        filter => 'nested',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'skipped',
+            'baz'                       => 'executed',
+            'baz > nested deep'         => 'executed',
+            'baz > nested deep > nested very deep' => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with partial nested path match - skips all (two words)',
+        filter => 'foo nested',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with partial match behavior - substring match works',
+        filter => 'fo',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'skipped',
+            'baz'                       => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with multiple patterns - foo and baz',
+        filter => 'foo|baz',
+        expect => {
+            'foo'                       => 'executed',
+            'foo > nested arithmetic'   => 'executed',
+            'foo > nested string'       => 'executed',
+            'bar'                       => 'skipped',
+            'baz'                       => 'executed',
+            'baz > nested deep'         => 'executed',
+            'baz > nested deep > nested very deep' => 'executed',
+        },
+    },
+);
+
+for my $tc (@tests) {
+    subtest $tc->{name} => sub {
+        my $stdout = run_test_file($test_file, $tc->{filter});
+
+        for my $name (sort keys %{$tc->{expect}}) {
+            my $status = $tc->{expect}{$name};
+            if ($status eq 'executed') {
+                like($stdout, match_executed($name), "$name is executed");
+            } elsif ($status eq 'skipped') {
+                like($stdout, match_skipped($name), "$name is skipped");
+            }
+        }
     };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo subtest is executed');
-    like($stdout, qr/ok \d+ - bar \{/, 'bar subtest is executed');
-    like($stdout, qr/ok \d+ - baz \{/, 'baz subtest is executed');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic is executed');
-    like($stdout, qr/ok \d+ - nested string \{/, 'nested string is executed');
-    like($stdout, qr/ok \d+ - nested deep \{/, 'nested deep is executed');
-    like($stdout, qr/ok \d+ - nested very deep \{/, 'nested very deep is executed');
-};
-
-subtest 'SUBTEST_FILTER=foo - matches foo only' => sub {
-    local $ENV{SUBTEST_FILTER} = 'foo';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo subtest is executed');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic is executed');
-    like($stdout, qr/ok \d+ - nested string \{/, 'nested string is executed');
-    # Non-matching tests are skipped
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-};
-
-subtest 'SUBTEST_FILTER=bar - matches bar only' => sub {
-    local $ENV{SUBTEST_FILTER} = 'bar';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    # Non-matching tests are skipped
-    like($stdout, qr/ok \d+ - foo # skip/, 'foo is skipped');
-    like($stdout, qr/ok \d+ - bar \{/, 'bar subtest is executed');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-};
-
-subtest 'SUBTEST_FILTER with substring pattern ba - matches bar and baz' => sub {
-    local $ENV{SUBTEST_FILTER} = 'ba';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    # Substring matches work
-    like($stdout, qr/ok \d+ - foo # skip/, 'foo is skipped');
-    like($stdout, qr/ok \d+ - bar \{/, 'bar matches ba substring');
-    like($stdout, qr/ok \d+ - baz \{/, 'baz matches ba substring');
-};
-
-subtest 'SUBTEST_FILTER for nested child with space-separated path' => sub {
-    local $ENV{SUBTEST_FILTER} = 'foo nested arithmetic';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo subtest is executed (parent)');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic is executed');
-    like($stdout, qr/ok \d+ - nested string # skip/, 'nested string is skipped');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-};
-
-subtest 'SUBTEST_FILTER for deeply nested child with partial substring' => sub {
-    local $ENV{SUBTEST_FILTER} = 'nested very deep';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    # Multi-word filter explores all top-level tests
-    like($stdout, qr/ok \d+ - foo # skip/, 'foo is skipped');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz \{/, 'baz subtest is executed (grandparent)');
-    like($stdout, qr/ok \d+ - nested deep \{/, 'nested deep is executed (parent)');
-    like($stdout, qr/ok \d+ - nested very deep \{/, 'nested very deep is executed');
-};
-
-subtest 'SUBTEST_FILTER="nested arithmetic" - explores top level for multi-word' => sub {
-    local $ENV{SUBTEST_FILTER} = 'nested arithmetic';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo explored and matches');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic found and executed');
-    like($stdout, qr/ok \d+ - nested string # skip/, 'nested string is skipped');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-};
-
-subtest 'SUBTEST_FILTER with no match - skips all tests' => sub {
-    local $ENV{SUBTEST_FILTER} = 'nonexistent';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    # Non-matching tests are skipped
-    like($stdout, qr/ok \d+ - foo # skip/, 'foo is skipped');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-    like($stdout, qr/# skip/, 'all tests are skipped for non-matching filter');
-};
-
-subtest 'SUBTEST_FILTER with partial nested path match - skips all (single word)' => sub {
-    local $ENV{SUBTEST_FILTER} = 'nested';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo explored and matches');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic found and executed');
-    like($stdout, qr/ok \d+ - nested string \{/, 'nested string found and executed');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz \{/, 'baz subtest is executed');
-    like($stdout, qr/ok \d+ - nested deep \{/, 'nested deep is executed');
-    like($stdout, qr/ok \d+ - nested very deep \{/, 'nested very deep is executed');
-};
-
-subtest 'SUBTEST_FILTER with partial nested path match - skips all (two words)' => sub {
-    local $ENV{SUBTEST_FILTER} = 'foo nested';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    like($stdout, qr/ok \d+ - foo \{/, 'foo explored and matches');
-    like($stdout, qr/ok \d+ - nested arithmetic \{/, 'nested arithmetic found and executed');
-    like($stdout, qr/ok \d+ - nested string \{/, 'nested string found and executed');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz subtest is skipped');
-};
-
-subtest 'SUBTEST_FILTER with partial match behavior - substring match works' => sub {
-    local $ENV{SUBTEST_FILTER} = 'fo';
-
-    my ($stdout, $stderr, $exit) = capture {
-        system($^X, '-Ilib', $test_file);
-    };
-
-    is($exit >> 8, 0, 'exit code is 0');
-    # Partial substring matches work
-    like($stdout, qr/ok \d+ - foo \{/, 'foo matches fo substring');
-    like($stdout, qr/ok \d+ - bar # skip/, 'bar is skipped');
-    like($stdout, qr/ok \d+ - baz # skip/, 'baz is skipped');
-};
+}
 
 done_testing;
