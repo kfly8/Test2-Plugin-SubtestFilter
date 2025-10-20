@@ -84,7 +84,12 @@ sub _create_filtered_subtest {
         my @child_subtest_names = $source =~ /subtest\(['"](.+?)['"]/g;
 
         if (@child_subtest_names) {
-            my @child_subtest_fullnames = map { join $SEPARATOR, $current_subtest_fullname, $_ } @child_subtest_names;
+            my @child_subtest_fullnames = map {
+                my $decoded = $_;
+                # Convert B::Deparse's \x{XXXX} format to actual characters
+                $decoded =~ s/\\x\{([0-9a-fA-F]+)\}/chr(hex($1))/ge;
+                join $SEPARATOR, $current_subtest_fullname, $decoded;
+            } @child_subtest_names;
             if (any { $_ =~ $filter } @child_subtest_fullnames) {
                 my $pass = $original_subtest->($name, $params, $code, @args);
                 $ctx->release;
