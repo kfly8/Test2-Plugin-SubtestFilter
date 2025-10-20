@@ -6,21 +6,23 @@ use Encode qw(decode_utf8);
 
 our $VERSION = "0.01";
 
-# Track test path for nested subtests
-our @test_path = ();
-our $subtest_filter = '';
-
 sub import {
     my $class = shift;
     my $caller = caller;
 
     # Get filter pattern from environment variable
-    $subtest_filter = $ENV{SUBTEST_FILTER} // '';
+    my $subtest_filter = $ENV{SUBTEST_FILTER} // '';
     # Decode UTF-8 if necessary
     if ($subtest_filter =~ /[\x80-\xFF]/) {
         $subtest_filter = decode_utf8($subtest_filter);
     }
 
+    apply_plugin($caller, $subtest_filter);
+}
+
+sub apply_plugin {
+    my ($caller, $subtest_filter) = @_;
+    
     # Override subtest in caller's namespace
     no strict 'refs';
     no warnings 'redefine';
@@ -33,65 +35,39 @@ sub import {
         # do nothing
     }
 
-    *{"${caller}::subtest"} = sub {
+    *{"${caller}::subtest"} = _create_filtered_subtest($orig, $subtest_filter, [], $caller);
+}
+
+sub _create_filtered_subtest {
+    my ($orig, $filter, $current_path, $target_caller) = @_;
+    
+    return sub {
         my ($name, $code, @rest) = @_;
 
         # Build the full test path with current name
-        my @current_path = (@test_path, $name);
-        my $full_path = join(' ', @current_path);
+        my @new_path = (@$current_path, $name);
+        my $full_path = join(' ', @new_path);
 
         # If no filter is set, run all tests
-        if (!$subtest_filter) {
-            local @test_path = @current_path;
-            return $orig->($name, $code, @rest);
+        if (!$filter) {
+            return $orig->($name, _wrap_code_with_path($code, $filter, \@new_path, $target_caller), @rest);
         }
 
         # Check if the full path contains the filter string (exact substring match)
-        my $matches = index($full_path, $subtest_filter) >= 0;
+        my $matches = index($full_path, $filter) >= 0;
 
         if ($matches) {
-            # This test matches, run it and all its children
-            local @test_path = @current_path;
-            return $orig->($name, $code, @rest);
+            # This test matches, run it and all its children without further filtering
+            # Create a wrapper that uses unfiltered subtest for children
+            return $orig->($name, _wrap_code_with_unfiltered_subtest($code, $orig, $target_caller), @rest);
         }
 
-        # Test doesn't match directly - check if we should explore this path
-        # We should run if the filter could potentially match a descendant path
-        
-        # Simple heuristic: run if the filter starts with our current path
-        # or if our current path is part of the filter
-        my $current_path_str = join(' ', @current_path);
-        
-        # Check if filter begins with current path (e.g., current: "foo", filter: "foo nested arithmetic")
-        my $filter_starts_with_current = (index($subtest_filter, $current_path_str) == 0);
-        
-        # Check if current path could be part of filter (e.g., current: "foo", filter: "nested very deep")
-        # by seeing if there are words in the filter that we haven't seen yet
-        my @filter_parts = split /\s+/, $subtest_filter;
-        my @current_parts = split /\s+/, $current_path_str;
-        
-        my $could_be_ancestor = 0;
-        for my $filter_part (@filter_parts) {
-            # If this part of the filter isn't in our current path,
-            # we might find it in descendants
-            my $found_in_current = 0;
-            for my $current_part (@current_parts) {
-                if ($current_part eq $filter_part) {
-                    $found_in_current = 1;
-                    last;
-                }
-            }
-            if (!$found_in_current) {
-                $could_be_ancestor = 1;
-                last;
-            }
+        # Check if this path could potentially lead to a match
+        if (_could_lead_to_match($filter, \@new_path)) {
+            # Continue exploring this path with filtering
+            return $orig->($name, _wrap_code_with_path($code, $filter, \@new_path, $target_caller), @rest);
         }
-        
-        if ($filter_starts_with_current || $could_be_ancestor) {
-            local @test_path = @current_path;
-            return $orig->($name, $code, @rest);
-        }
-        
+
         # No potential match - skip this subtest
         require Test2::API;
         my $ctx = Test2::API::context();
@@ -99,6 +75,106 @@ sub import {
         $ctx->release;
         return 1;
     };
+}
+
+sub _wrap_code_with_path {
+    my ($original_code, $filter, $current_path, $target_caller) = @_;
+    
+    return sub {
+        # Temporarily replace the subtest function in the current scope
+        # to continue filtering at the next level
+        my $caller = caller;
+        
+        # Save current subtest function
+        no strict 'refs';
+        my $current_subtest = *{"${caller}::subtest"}{CODE};
+        
+        # Replace with filtered version for this scope
+        local *{"${caller}::subtest"} = _create_filtered_subtest(
+            $current_subtest, 
+            $filter, 
+            $current_path,
+            $target_caller
+        );
+        
+        # Run the original code
+        return $original_code->();
+    };
+}
+
+sub _wrap_code_without_filtering {
+    my ($original_code) = @_;
+    
+    return sub {
+        # Run the original code without any filtering modifications
+        # This ensures that matched subtests run all their children
+        return $original_code->();
+    };
+}
+
+sub _wrap_code_with_unfiltered_subtest {
+    my ($original_code, $orig_subtest, $target_caller) = @_;
+    
+    return sub {
+        # Use the target caller namespace instead of runtime caller
+        my $caller = $target_caller;
+        
+        # Save current (filtered) subtest function  
+        no strict 'refs';
+        my $current_subtest = *{"${caller}::subtest"}{CODE};
+        
+        # Create unfiltered subtest that just passes through to original
+        my $unfiltered_subtest = sub {
+            my ($name, $code, @rest) = @_;
+            return $orig_subtest->($name, $code, @rest);
+        };
+        
+        # Temporarily replace subtest with unfiltered version
+        local *{"${caller}::subtest"} = $unfiltered_subtest;
+        
+        # Run the original code
+        return $original_code->();
+    };
+}
+
+sub _could_lead_to_match {
+    my ($filter, $current_path) = @_;
+    
+    my $current_path_str = join(' ', @$current_path);
+    
+    # If filter starts with current path, definitely continue
+    # e.g., path="foo", filter="foo nested arithmetic"
+    if (index($filter, $current_path_str) == 0) {
+        return 1;
+    }
+    
+    # Check if current path could be start of filter path
+    my @filter_words = split /\s+/, $filter;
+    my @path_words = @$current_path;
+    
+    if (@path_words <= @filter_words) {
+        my $matches_prefix = 1;
+        for my $i (0 .. $#path_words) {
+            if ($path_words[$i] ne $filter_words[$i]) {
+                $matches_prefix = 0;
+                last;
+            }
+        }
+        return 1 if $matches_prefix;
+    }
+    
+    # Special case: if filter doesn't start with current path but could contain it
+    # Example: filter="nested arithmetic", path=["foo"] -> check if "foo nested arithmetic" could exist
+    my $potential_full_path = $current_path_str . ' ' . $filter;
+    # But we can't know if this exists without exploring, so we need a different approach
+    
+    # Only explore if the filter could reasonably appear in descendants
+    # For single words, be conservative and only allow exploration at top level
+    if (@$current_path == 1 && scalar(split /\s+/, $filter) > 1) {
+        return 1;  # Allow exploring top-level subtests for multi-word filters
+    }
+    
+    return 0;
 }
 
 

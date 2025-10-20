@@ -6,7 +6,7 @@ use File::Spec;
 my $test_file = File::Spec->catfile('t', 'examples', 'japanese.t');
 
 # Test that Japanese filters work
-subtest 'Run with SUBTEST_FILTER=ユーザー認証' => sub {
+subtest 'Run with SUBTEST_FILTER=ユーザー認証 - filters correctly' => sub {
     local $ENV{SUBTEST_FILTER} = 'ユーザー認証';
 
     my ($stdout, $stderr, $exit) = capture {
@@ -14,12 +14,12 @@ subtest 'Run with SUBTEST_FILTER=ユーザー認証' => sub {
     };
 
     is($exit >> 8, 0, 'exit code is 0');
-    # Check that some tests ran - current implementation runs all due to heuristic
-    like($stdout, qr/ok \d+ -.+\{/, 'some subtests executed');
-    unlike($stdout, qr/# skip/, 'all tests run due to heuristic');
+    # Check that matching tests ran
+    like($stdout, qr/ok \d+ -.+\{/, 'matching subtests executed');
+    like($stdout, qr/# skip/, 'non-matching tests are skipped');
 };
 
-subtest 'Run with SUBTEST_FILTER=データベース操作' => sub {
+subtest 'Run with SUBTEST_FILTER=データベース操作 - filters correctly' => sub {
     local $ENV{SUBTEST_FILTER} = 'データベース操作';
 
     my ($stdout, $stderr, $exit) = capture {
@@ -28,11 +28,11 @@ subtest 'Run with SUBTEST_FILTER=データベース操作' => sub {
 
     is($exit >> 8, 0, 'exit code is 0');
     like($stdout, qr/ok \d+ -.+\{/, 'データベース操作 executed');
-    # Current implementation runs all tests due to heuristic
-    unlike($stdout, qr/# skip/, 'all tests run due to heuristic');
+    # Filtering now works correctly
+    like($stdout, qr/# skip/, 'non-matching tests are skipped');
 };
 
-subtest 'Run with Japanese substring 処理' => sub {
+subtest 'Run with Japanese substring 処理 - filters correctly' => sub {
     local $ENV{SUBTEST_FILTER} = '処理';
 
     my ($stdout, $stderr, $exit) = capture {
@@ -41,8 +41,8 @@ subtest 'Run with Japanese substring 処理' => sub {
 
     is($exit >> 8, 0, 'exit code is 0');
     like($stdout, qr/ok \d+ -.+\{/, 'subtests matching 処理 executed');
-    # Current implementation runs all tests due to heuristic
-    unlike($stdout, qr/# skip/, 'all tests run due to heuristic');
+    # Filtering now works correctly
+    like($stdout, qr/# skip/, 'non-matching tests are skipped');
 };
 
 subtest 'Run with space-separated Japanese path' => sub {
@@ -58,7 +58,7 @@ subtest 'Run with space-separated Japanese path' => sub {
     unlike($stdout, qr/# skip/, 'all tests run due to heuristic');
 };
 
-subtest 'No match with Japanese filter 存在しないテスト' => sub {
+subtest 'No match with Japanese filter 存在しないテスト - skips all' => sub {
     local $ENV{SUBTEST_FILTER} = '存在しないテスト';
 
     my ($stdout, $stderr, $exit) = capture {
@@ -66,9 +66,9 @@ subtest 'No match with Japanese filter 存在しないテスト' => sub {
     };
 
     is($exit >> 8, 0, 'exit code is 0');
-    # Current implementation runs all tests due to heuristic
-    like($stdout, qr/ok \d+ -.+\{/, 'tests run due to heuristic');
-    unlike($stdout, qr/# skip/, 'no tests are skipped with current heuristic');
+    # Non-matching filters now properly skip tests
+    like($stdout, qr/# skip/, 'tests are skipped for non-matching filter');
+    unlike($stdout, qr/ok \d+ -.+\{/, 'no tests executed for non-matching filter');
 };
 
 # Direct test to verify Japanese matching works at the Perl level
