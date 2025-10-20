@@ -6,26 +6,36 @@ Test2::Plugin::SubtestFilter - Filter subtests by name using environment variabl
 # SYNOPSIS
 
 ```perl
+# t/test.t
 use Test2::V0;
 use Test2::Plugin::SubtestFilter;
 
 subtest 'foo' => sub {
-    ok 1, 'foo test 1';
-
-    subtest 'nested arithmetic' => sub {
-        ok 1, 'arithmetic test';
-    };
-
-    subtest 'nested string' => sub {
-        ok 1, 'string test';
-    };
+    ok 1;
+    subtest 'bar' => sub { ok 1 };
 };
 
-subtest 'bar' => sub {
-    ok 1, 'bar test';
+subtest 'baz' => sub {
+    ok 1;
 };
 
 done_testing;
+```
+
+Then run with filtering:
+
+```perl
+# Run only 'foo' subtest and all its children
+$ SUBTEST_FILTER=foo prove -lv t/test.t
+
+# Run nested 'bar' subtest (and its parent 'foo')
+$ SUBTEST_FILTER=bar prove -lv t/test.t
+
+# Use regex patterns
+$ SUBTEST_FILTER='ba' prove -lv t/test.t  # Matches 'bar' and 'baz'
+
+# Run all tests (no filtering)
+$ prove -lv t/test.t
 ```
 
 # DESCRIPTION
@@ -34,59 +44,55 @@ Test2::Plugin::SubtestFilter is a Test2 plugin that allows you to selectively ru
 specific subtests based on environment variables. This is useful when you want to
 run only a subset of your tests during development or debugging.
 
-# USAGE
-
-Load this plugin after loading Test2::V0 or Test2::Tools::Subtest:
-
-```perl
-use Test2::V0;
-use Test2::Plugin::SubtestFilter;
-```
-
-Then set the `SUBTEST_FILTER` environment variable to filter subtests:
-
-```perl
-# Run only the 'foo' subtest and all its children
-SUBTEST_FILTER=foo prove -lv t/test.t
-
-# Run only the 'nested arithmetic' subtest (and its parent 'foo')
-SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
-
-# Use regex patterns to match multiple subtests
-SUBTEST_FILTER='ba.*' prove -lv t/test.t  # Matches 'bar', 'baz', etc.
-
-# Run all tests (no filtering)
-prove -lv t/test.t
-```
-
 # FILTERING BEHAVIOR
 
-The plugin implements smart filtering with the following rules:
+The plugin matches subtest names using partial matching (substring or regex pattern).
+For nested subtests, the full name is constructed by joining parent and child names
+with spaces.
 
-- **Parent name matches**
+## How Matching Works
 
-    When a parent subtest name matches the filter, the parent and ALL its children
-    are executed without further filtering.
+- **Simple match**
 
     ```perl
-    SUBTEST_FILTER=foo prove -lv t/test.t
-    # Executes 'foo' and all its nested subtests
+    subtest 'foo' => sub { ... };
+    # SUBTEST_FILTER=foo matches 'foo'
+    # SUBTEST_FILTER=fo  matches 'foo' (partial match)
     ```
 
-- **Child name matches**
+- **Nested subtest match**
 
-    When a child subtest name matches the filter, the parent is executed but only
-    the matching children are run. Non-matching siblings are skipped.
+    ```perl
+    subtest 'parent' => sub {
+        subtest 'child' => sub { ... };
+    };
+    # Full name is: 'parent child'
+    # SUBTEST_FILTER=child         matches 'parent child'
+    # SUBTEST_FILTER='parent child' matches 'parent child'
+    ```
+
+- **When parent matches**
+
+    When a parent subtest matches the filter, ALL its children are executed.
+
+    ```perl
+    SUBTEST_FILTER=parent prove -lv t/test.t
+    # Executes 'parent' and all nested subtests inside it
+    ```
+
+- **When child matches**
+
+    When a nested child matches the filter, its parent is executed but only the
+    matching children run. Non-matching siblings are skipped.
 
     ```
-    SUBTEST_FILTER='nested arithmetic' prove -lv t/test.t
-    # Executes 'foo' (parent) but only runs 'nested arithmetic' (child)
-    # Other children like 'nested string' are skipped
+    SUBTEST_FILTER=child prove -lv t/test.t
+    # Executes 'parent' (to reach 'child') but skips other children
     ```
 
 - **No match**
 
-    Subtests that don't match the filter (and have no matching children) are skipped.
+    Subtests that don't match the filter are skipped.
 
 - **No filter set**
 
@@ -96,27 +102,14 @@ The plugin implements smart filtering with the following rules:
 
 - `SUBTEST_FILTER`
 
-    Regular expression pattern to match subtest names.
+    Regular expression pattern for partial matching against subtest names.
+    Supports both substring matching and full regex patterns.
 
-The pattern is automatically anchored with `\A` and `\z`, so partial matches
-won't work unless you use regex wildcards:
-
-```
-SUBTEST_FILTER=foo        # Matches only 'foo' exactly
-SUBTEST_FILTER='foo.*'    # Matches 'foo', 'foobar', 'foo_test', etc.
-```
-
-# IMPLEMENTATION DETAILS
-
-This plugin works by overriding the `subtest` function in the caller's namespace.
-It uses Test2::API::intercept to perform a dry-run of subtests to determine if
-any child subtests would match the filter before actually executing the parent.
-
-The plugin maintains internal state using package variables to track:
-
-- Whether a parent subtest has matched (all children should run)
-- Whether we're in checking mode (dry-run to detect matching children)
-- Whether any child matched during the check
+    ```perl
+    SUBTEST_FILTER=foo      # Matches 'foo', 'foobar', 'my foo test', etc.
+    SUBTEST_FILTER='foo.*'  # Matches 'foo', 'foobar', 'foo_test', etc.
+    SUBTEST_FILTER='foo|bar' # Matches 'foo' or 'bar'
+    ```
 
 # CAVEATS
 
@@ -124,9 +117,6 @@ The plugin maintains internal state using package variables to track:
 as it needs to override the `subtest` function that they export.
 - The plugin modifies the `subtest` function in the caller's namespace,
 which may interact unexpectedly with other code that also modifies `subtest`.
-- During the dry-run phase, subtest code blocks are executed but their
-test events are intercepted and discarded. Side effects in the code blocks
-may still occur during this phase.
 
 # SEE ALSO
 
