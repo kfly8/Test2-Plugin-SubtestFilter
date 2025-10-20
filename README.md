@@ -1,4 +1,4 @@
-[![Actions Status](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions?workflow=test)
+[![Actions Status](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions?workflow=test) [![MetaCPAN Release](https://badge.fury.io/pl/Test2-Plugin-SubtestFilter.svg)](https://metacpan.org/release/Test2-Plugin-SubtestFilter)
 # NAME
 
 Test2::Plugin::SubtestFilter - Filter subtests by name
