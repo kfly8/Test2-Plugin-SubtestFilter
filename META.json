@@ -1,5 +1,5 @@
 {
-   "abstract" : "Filter subtests by name using environment variables",
+   "abstract" : "Filter subtests by name",
    "author" : [
       "kobaken <kentafly88@gmail.com>"
    ],
@@ -42,6 +42,7 @@
       },
       "runtime" : {
          "requires" : {
+            "Scalar::List::Utils" : "1.33",
             "Test2::API" : "0",
             "perl" : "5.016"
          }

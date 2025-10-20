@@ -111,7 +111,7 @@ __END__
 
 =head1 NAME
 
-Test2::Plugin::SubtestFilter - Filter subtests by name using environment variables
+Test2::Plugin::SubtestFilter - Filter subtests by name
 
 =head1 SYNOPSIS
 

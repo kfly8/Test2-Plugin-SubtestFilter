@@ -1,7 +1,7 @@
 [![Actions Status](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/kfly8/Test2-Plugin-SubtestFilter/actions?workflow=test)
 # NAME
 
-Test2::Plugin::SubtestFilter - Filter subtests by name using environment variables
+Test2::Plugin::SubtestFilter - Filter subtests by name
 
 # SYNOPSIS
 
