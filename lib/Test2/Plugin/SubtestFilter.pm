@@ -7,7 +7,7 @@ use Test2::API qw(context);
 use B::Deparse ();
 use List::Util qw(any);
 
-our $VERSION = "0.01";
+our $VERSION = "0.02";
 
 our $SEPARATOR = ' ';
 
