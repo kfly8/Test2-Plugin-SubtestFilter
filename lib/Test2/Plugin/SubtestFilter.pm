@@ -11,6 +11,8 @@ our $VERSION = "0.01";
 
 our $SEPARATOR = ' ';
 
+use constant DEBUG => $ENV{SUBTEST_FILTER_DEBUG} ? 1 : 0;
+
 sub import {
     my $class = shift;
     my $caller = caller;
@@ -98,7 +100,9 @@ sub _create_filtered_subtest {
         }
 
         # No match found, skip the subtest
-        $ctx->skip($name);
+        if (DEBUG) {
+            $ctx->skip($name);
+        }
         $ctx->release;
         return 1;
     }

@@ -24,9 +24,10 @@ sub match_skipped {
 }
 
 sub run_test_file {
-    my ($test_file, $filter) = @_;
+    my ($test_file, $filter, $debug) = @_;
 
     local $ENV{SUBTEST_FILTER} = defined $filter ? encode_utf8($filter) : undef;
+    local $ENV{SUBTEST_FILTER_DEBUG} = $debug // 1; # Default to enabled
 
     my $file = File::Spec->catfile(split m!/!, $test_file);
 
