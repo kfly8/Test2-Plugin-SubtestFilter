@@ -4,6 +4,7 @@ use lib 't/lib';
 use TestHelper;
 
 my $test_file = 't/examples/syntax_variations.t';
+my $test_file_edge = 't/examples/edge_cases.t';
 
 my @tests = (
     {
@@ -204,6 +205,135 @@ my @tests = (
             # Variable-based subtests cannot be matched via static parsing
             # They would need runtime filtering (not currently supported)
             'variable_parent'       => 'skipped',
+        },
+    },
+    # Edge cases from edge_cases.t
+    {
+        name => 'SUBTEST_FILTER="test => value" - matches subtest with arrow in name',
+        file => $test_file_edge,
+        filter => 'test => value',
+        expect => {
+            'test => value' => 'executed',
+            'test { block }' => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER="test \\{ block \\}" - matches subtest with braces in name',
+        file => $test_file_edge,
+        filter => 'test \\{ block \\}',
+        expect => {
+            'test => value' => 'skipped',
+            'test { block }' => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER with very long name - handles long names correctly',
+        file => $test_file_edge,
+        filter => 'this_is_a_very_long',
+        expect => {
+            'this_is_a_very_long_subtest_name_that_tests_if_the_parser_can_handle_really_long_names_correctly' => 'executed',
+        },
+    },
+    # Additional edge cases for syntax variations
+    {
+        name => 'SUBTEST_FILTER=foo1 - exact match at top level with similar siblings',
+        file => $test_file_edge,
+        filter => '^foo1$',
+        expect => {
+            'foo1'   => 'executed',
+            'foo2'   => 'skipped',
+            'foobar' => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=foo2 - exact match selects only foo2, not foo1',
+        file => $test_file_edge,
+        filter => '^foo2$',
+        expect => {
+            'foo1'   => 'skipped',
+            'foo2'   => 'executed',
+            'foobar' => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=mixed - verifies regular tests are ignored',
+        file => $test_file_edge,
+        filter => 'mixed',
+        expect => {
+            'foo1'   => 'skipped',
+            'foo2'   => 'skipped',
+            'foobar' => 'skipped',
+            'mixed1' => 'executed',
+            'mixed2' => 'executed',
+            # Regular tests (ok 1, ...) should not interfere
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"test-with\" - matches dash-separated names',
+        file => $test_file_edge,
+        filter => 'test-with',
+        expect => {
+            'test-with-dashes' => 'executed',
+            'test_with_underscores' => 'skipped',
+            'test.with.dots' => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"test_with\" - matches underscore-separated names',
+        file => $test_file_edge,
+        filter => 'test_with',
+        expect => {
+            'test-with-dashes' => 'skipped',
+            'test_with_underscores' => 'executed',
+            'test.with.dots' => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"root branch_a\" - selects one branch in multi-branch tree',
+        file => $test_file_edge,
+        filter => 'root branch_a',
+        expect => {
+            'root'                  => 'executed',
+            'root > branch_a'       => 'executed',
+            'root > branch_a > leaf' => 'executed',
+            'root > branch_b'       => 'skipped',
+            # branch_b > leaf is not checked because parent is skipped
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"standard\" - matches both single and double quoted subtests',
+        file => $test_file,
+        filter => 'standard',
+        expect => {
+            'standard_single'       => 'executed',
+            'standard_double'       => 'executed',
+            'paren_fat_comma'       => 'skipped',
+            'paren_comma'           => 'skipped',
+            'bareword'              => 'skipped',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"^mixed-chars_123$\" - exact match with special chars',
+        file => $test_file,
+        filter => '^mixed-chars_123$',
+        expect => {
+            'standard_single'       => 'skipped',
+            'standard_double'       => 'skipped',
+            'paren_fat_comma'       => 'skipped',
+            'bareword'              => 'skipped',
+            'mixed-chars_123'       => 'executed',
+        },
+    },
+    {
+        name => 'SUBTEST_FILTER=\"いいい\" - matches double-quoted Japanese',
+        file => $test_file,
+        filter => 'いいい',
+        expect => {
+            'standard_single'       => 'skipped',
+            'あああ'                => 'skipped',
+            'いいい'                => 'executed',
+            '🎉🎊'                  => 'skipped',
+            'ううう'                => 'skipped',
         },
     },
 );
