@@ -42,7 +42,6 @@
       },
       "runtime" : {
          "requires" : {
-            "Scalar::List::Utils" : "1.33",
             "Test2::API" : "0",
             "perl" : "5.016"
          }
