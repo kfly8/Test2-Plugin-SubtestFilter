@@ -132,31 +132,40 @@ sub _extract_sub_block {
 
     my $depth = 1;
     my $pos = $start_pos;
-    my $len = length($content);
 
-    while ($pos < $len && $depth > 0) {
+    # Use regex-based approach for faster scanning
+    # This scans for relevant tokens (braces and quotes) instead of checking every character
+    while ($pos < length($content) && $depth > 0) {
+        # Find next relevant character: {, }, ", '
+        if (substr($content, $pos) =~ /\G([^{}"']+)/gc) {
+            $pos += length($1);
+        }
+
+        last if $pos >= length($content);
+
         my $char = substr($content, $pos, 1);
 
         if ($char eq '{') {
             $depth++;
+            $pos++;
         } elsif ($char eq '}') {
             $depth--;
+            $pos++;
+            last if $depth == 0;
         } elsif ($char eq '"' || $char eq "'") {
-            # Skip string content
+            # Skip string content using regex
             my $quote = $char;
             $pos++;
-            while ($pos < $len) {
-                my $c = substr($content, $pos, 1);
-                if ($c eq '\\') {
-                    $pos++; # Skip escaped character
-                } elsif ($c eq $quote) {
-                    last;
-                }
-                $pos++;
+            # Match everything until unescaped quote
+            if (substr($content, $pos) =~ /\G((?:[^\\$quote]|\\.)*)$quote/gc) {
+                $pos += length($1) + 1; # +1 for closing quote
+            } else {
+                # No closing quote found, skip to end
+                $pos = length($content);
             }
+        } else {
+            $pos++;
         }
-
-        $pos++;
     }
 
     if ($depth == 0) {
