@@ -2,6 +2,10 @@ Revision history for Perl extension Test2-Plugin-SubtestFilter
 
 {{$NEXT}}
 
+0.04 2025-10-28T05:20:32Z
+    - Optimize _extract_sub_block for faster subtest parsing #2
+    - Add apply_plugin method and documentation #3
+
 0.03 2025-10-25T14:28:52Z
     - Replace B::Deparse with file-based parsing for deep nested subtest support #1
 
