@@ -21,6 +21,11 @@ sub import {
 sub apply_plugin {
     my ($class, $target_package, $target_file) = @_;
 
+    unless ( $ENV{SUBTEST_FILTER} ) {
+        # No filter set, do nothing
+        return undef;
+    }
+
     # Get original subtest function from caller's namespace
     # If it doesn't exist, do nothing
     my $orig = $target_package->can('subtest') or return;
@@ -32,16 +37,13 @@ sub apply_plugin {
     no strict 'refs';
     no warnings 'redefine';
     *{"${target_package}::subtest"} = _create_filtered_subtest($orig, $all_subtests);
+
+    return 1;
 }
 
 # Get subtest filter regex from environment variable
 sub _get_subtest_filter_regex {
-
-    unless ( $ENV{SUBTEST_FILTER} ) {
-        return undef;
-    }
-
-    my $subtest_filter = $ENV{SUBTEST_FILTER};
+    my $subtest_filter = $ENV{SUBTEST_FILTER} or return undef;
 
     # Decode UTF-8 if necessary
     if ($subtest_filter =~ /[\x80-\xFF]/) {
