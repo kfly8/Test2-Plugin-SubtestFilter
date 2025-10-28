@@ -5,7 +5,7 @@ use warnings;
 use Encode qw(decode_utf8);
 use Test2::API qw(context);
 
-our $VERSION = "0.04";
+our $VERSION = "0.05";
 
 our $SEPARATOR = ' ';
 

@@ -65,7 +65,7 @@
          "web" : "https://github.com/kfly8/Test2-Plugin-SubtestFilter"
       }
    },
-   "version" : "0.04",
+   "version" : "0.05",
    "x_serialization_backend" : "JSON::PP version 4.16",
    "x_static_install" : 1
 }
