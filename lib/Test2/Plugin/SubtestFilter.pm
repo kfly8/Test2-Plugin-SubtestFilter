@@ -15,17 +15,23 @@ sub import {
     my $class = shift;
     my ($caller, $file_path) = caller;
 
+    $class->apply_plugin($caller, $file_path);
+}
+
+sub apply_plugin {
+    my ($class, $target_package, $target_file) = @_;
+
     # Get original subtest function from caller's namespace
     # If it doesn't exist, do nothing
-    my $orig = $caller->can('subtest') or return;
+    my $orig = $target_package->can('subtest') or return;
 
     # Parse subtest structure from file
-    my $all_subtests = _parse_subtest_structure($file_path);
+    my $all_subtests = _parse_subtest_structure($target_file);
 
     # Override subtest in caller's namespace
     no strict 'refs';
     no warnings 'redefine';
-    *{"${caller}::subtest"} = _create_filtered_subtest($orig, $all_subtests);
+    *{"${target_package}::subtest"} = _create_filtered_subtest($orig, $all_subtests);
 }
 
 # Get subtest filter regex from environment variable
@@ -323,6 +329,15 @@ Subtests that don't match the filter are skipped.
 When C<SUBTEST_FILTER> is not set, all tests run normally.
 
 =back
+
+=head1 METHODS
+
+=head2 apply_plugin
+
+    Test2::Plugin::SubtestFilter->apply_plugin($target_package, $target_file);
+
+Applies the subtest filtering functionality to the specified package.
+Normally called automatically via C<import()>. For advanced users only.
 
 =head1 ENVIRONMENT VARIABLES
 
