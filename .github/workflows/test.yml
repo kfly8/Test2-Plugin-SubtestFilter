@@ -31,6 +31,8 @@ jobs:
           perl-version: ${{ matrix.perl }}
       - name: Install dependencies
         run: cpanm -nq --installdeps --with-develop --with-recommends .
+      - name: Install modules for integrations tests
+        run: cpanm -nq Import::Into
       - name: Run test
         run: prove -lr t
 
