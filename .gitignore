@@ -29,5 +29,6 @@ cover_db/
 MYMETA.*
 
 /Test2-Plugin-SubtestFilter-*
-.claude
+.claude/*
+!.claude/skills/
 cpanfile.snapshot
